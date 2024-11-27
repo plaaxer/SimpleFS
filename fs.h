@@ -52,6 +52,8 @@ public:
     int  fs_read(int inumber, char *data, int length, int offset);
     int  fs_write(int inumber, const char *data, int length, int offset);
 
+    int fs_get_indirect_data_blocks(int indirect);
+
 private:
     Disk *disk;
 };
