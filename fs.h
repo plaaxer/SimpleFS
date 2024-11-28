@@ -3,6 +3,8 @@
 
 #include "disk.h"
 
+#include <vector>
+
 class INE5412_FS
 {
 public:
@@ -52,10 +54,19 @@ public:
     int  fs_read(int inumber, char *data, int length, int offset);
     int  fs_write(int inumber, const char *data, int length, int offset);
 
-    int fs_get_indirect_data_blocks(int indirect);
+    int fs_show_indirect_data_blocks(int indirect);
+    std::vector<int> fs_get_indirect_data_blocks(int indirect);
+    std::vector<int> fs_get_direct_data_blocks(int inumber); 
+
 
 private:
+    int system_blocks;
+    int nblocks;
+    int ninodeblocks;
     Disk *disk;
+    std::vector<bool> used_inodes_bitmap;
+    std::vector<bool> used_blocks_bitmap;
+
 };
 
 #endif
