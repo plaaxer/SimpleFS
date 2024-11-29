@@ -3,8 +3,22 @@
 
 int INE5412_FS::fs_format()
 {
-	return 0;
+    if (mounted) {
+        cout << "Cannot format a mounted disk!" << endl;
+        return 0;
+    }
+
+    class fs_superblock superblock;
+    superblock.magic = FS_MAGIC;
+    superblock.nblocks = disk->size();
+    superblock.ninodeblocks = superblock.nblocks / 10;
+    superblock.ninodes = INODES_PER_BLOCK * superblock.ninodeblocks;
+
+    disk->write(0, (char*)&superblock);
+
+    return 1;
 }
+
 
 void INE5412_FS::fs_debug()
 {
@@ -142,6 +156,7 @@ int INE5412_FS::fs_mount()
 		cout << bit << " ";
 	}
 	cout << "\n";
+	mounted = 1;
 	return 1;
 }
 
@@ -265,39 +280,38 @@ int INE5412_FS::fs_read(int inumber, char *data, int length, int offset)
 	vector<int> direct_blocks = fs_get_direct_data_blocks(inumber);
 	vector<int> indirect_blocks = fs_get_indirect_data_blocks(inode.indirect);
 
+	// junta os blocos diretos e indiretos em um único vetor
+	std::vector<int> blocks(direct_blocks.begin(), direct_blocks.end());
+    blocks.insert(blocks.end(), indirect_blocks.begin(), indirect_blocks.end());
+
 	// calcular offset para descobrir por qual bloco (e byte) comecar ler
 	block_offset = offset/disk->DISK_BLOCK_SIZE;
 	bytes_offset = offset%disk->DISK_BLOCK_SIZE;
 
-
-	// DEBUG,  APAGAR DEPOIS
-	cout << "Direct blocks being read: ";
-	for (int block : direct_blocks) {
-		cout << block << " ";
-	}
 	cout << "\nblock offset: " << block_offset << "\nbytes offset:" << bytes_offset << "\n" << "length: " << length << "\n";
 
-	cout << "\n";
-	for (size_t direct = block_offset; direct < direct_blocks.size(); direct++) {
+	// comeca a leitura a partir do offset de bloco
+	for (size_t block_num = block_offset; block_num < blocks.size(); block_num++) {
+
 		// adiciona os bytes lidos ao buffer (sempre de 4kb em 4kb)
-		disk->read(direct_blocks[direct], buffer);
+		disk->read(blocks[block_num], buffer);
 		
 		// se estivermos na primeira iteracão, ainda há byte offset
-		if (direct == block_offset) {
-			cout << "INSIDE IF\n";
+		if (block_num == block_offset) {
+
 			// cálculo para o primeiro bloco a ser lido (se length for menor do que falta para o fim do bloco, lê length, senão lê o que falta para o fim do bloco)
 			current_length = (length < (disk->DISK_BLOCK_SIZE-bytes_offset)) ? length : disk->DISK_BLOCK_SIZE-bytes_offset;
-			cout << "current_length: " << current_length << "\n";
+
 			// faz a cópia dos bytes lidos para o *data
 			memcpy(data, buffer+bytes_offset, current_length);
 
 		} else {
-			cout << "INSIDE ELSE\n";
+
 			// cálculo para demais casos do length a ser lido (se length for menor que o tamanho do bloco, lê length, senão lê o tamanho do bloco)
 			current_length = (length < disk->DISK_BLOCK_SIZE) ? length : disk->DISK_BLOCK_SIZE;
-			cout << "current_length: " << current_length << "\n";
+
 			// faz a cópia dos bytes lidos para o *data
-			memcpy (data, buffer, current_length);
+			memcpy(data+read_bytes, buffer, current_length);
 
 		}
 
@@ -307,21 +321,111 @@ int INE5412_FS::fs_read(int inumber, char *data, int length, int offset)
 		// decrementa o length para saber quantos bytes ainda faltam ser lidos
 		length -= current_length;
 
-		cout << "read_bytes: " << read_bytes << "\n";
 		// se length for 0, todos os bytes foram lidos
 		if (length <= 0) {
 			delete[] buffer;
 			return read_bytes;
 		}
 	}
+	// arquivo lido completamente
 	return read_bytes;
-	// não há mais blocos diretos para ler...
-	// # TODO fazer o mesmo para os blocos indiretos
 }
 
 int INE5412_FS::fs_write(int inumber, const char *data, int length, int offset)
 {
-	return 0;
+	if (used_inodes_bitmap.size() == 0 || inumber < 1 || inumber > used_inodes_bitmap.size() || length <= 0 || offset < 0) {
+		cout << "Invalid parameters when reading inode";
+		return 0;
+	}
+
+	int written_bytes = 0;
+	int current_length = 0;
+	char* buffer = new char[disk->DISK_BLOCK_SIZE];
+
+	class fs_inode inode;
+	inode_load(inumber, &inode);
+
+	// obtém todos os blocos de dados do arquivo dado
+	vector<int> direct_blocks = fs_get_direct_data_blocks(inumber);
+	vector<int> indirect_blocks = fs_get_indirect_data_blocks(inode.indirect);
+
+	// junta os blocos diretos e indiretos em um único vetor
+	std::vector<int> blocks(direct_blocks.begin(), direct_blocks.end());
+    blocks.insert(blocks.end(), indirect_blocks.begin(), indirect_blocks.end());
+
+	// calcular offset para descobrir por qual bloco (e byte) comecar a escrever
+	int block_offset = offset/disk->DISK_BLOCK_SIZE;
+	int bytes_offset = offset%disk->DISK_BLOCK_SIZE;
+
+	// primeiro, percorre o arquivo através dos blocos de dados já existentes enquanto "gasta" o offset
+
+	for (size_t block_num = block_offset; block_num < blocks.size(); block_num++) {
+
+		// primeira iteracao, talvez haja byte offset
+		if (block_num == block_offset) {
+			
+			// calcula length de escrita
+			current_length = (length < (disk->DISK_BLOCK_SIZE-bytes_offset)) ? length : disk->DISK_BLOCK_SIZE-bytes_offset;
+
+			// lê conteúdo atual do disco
+			disk->read(block_num, buffer);
+
+			// altera conteúdo atual do disco com conteúdo de data (a partir do offset de bytes)
+			memcpy(buffer+bytes_offset, data, current_length);
+
+			// retorna ao disco
+			disk->write(block_num, buffer);
+		}
+
+		else {
+
+			current_length = (length < disk->DISK_BLOCK_SIZE) ? length : disk->DISK_BLOCK_SIZE;
+
+			disk->read(block_num, buffer);
+
+			memcpy(buffer, data+written_bytes, current_length);
+
+			disk->write(block_num, buffer);
+
+		}
+		
+		written_bytes += current_length;
+		length -= current_length;
+
+		if (length == 0) {
+			delete[] buffer;
+			return written_bytes;
+		}
+
+	}
+
+	int free_block;
+	char* second_buffer = new char[disk->DISK_BLOCK_SIZE];
+
+	// itera preenchendo blocos até terminar de escrever o length ou não haver mais espaco
+	while(length>0) {
+
+		free_block = find_free_block();
+		if (free_block<0) {
+			cout << "Not enough space to continue writing!";
+			return written_bytes;
+		}
+
+		current_length = (length < disk->DISK_BLOCK_SIZE) ? length : disk->DISK_BLOCK_SIZE;
+
+		memcpy(second_buffer, data+written_bytes, current_length);
+
+		disk->write(free_block, second_buffer);
+
+		written_bytes += current_length;
+		length -= current_length;
+
+	}
+
+	delete[] second_buffer;
+	return written_bytes;
+	
+
 }
 
 std::vector<int> INE5412_FS::fs_get_indirect_data_blocks(int indirect) 
@@ -389,4 +493,15 @@ void INE5412_FS::inode_save( int inumber, class fs_inode *inode )
 	block.inode[(inumber-1) % INODES_PER_BLOCK] = *inode;
 	disk->write( (inumber-1) / INODES_PER_BLOCK + 1, block.data );
 	return;
+}
+
+// fazer depois: criar func sanity check
+
+int INE5412_FS::find_free_block() {
+	for (size_t i = 0; i < used_blocks_bitmap.size(); i++) {
+		if (!used_blocks_bitmap[i]) {
+			return i + system_blocks;
+		}
+	}
+	return -1;
 }

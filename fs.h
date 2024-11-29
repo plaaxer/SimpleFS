@@ -42,6 +42,7 @@ public:
 
     INE5412_FS(Disk *d) {
         disk = d;
+        mounted = 0;
     } 
 
     void fs_debug();
@@ -60,6 +61,7 @@ public:
 
 
 private:
+    int mounted;
     int system_blocks;
     int nblocks;
     int ninodeblocks;
@@ -68,7 +70,7 @@ private:
     std::vector<bool> used_blocks_bitmap;
     void inode_load(int inumber, fs_inode *inode);
     void inode_save(int inumber, fs_inode *inode);
-
+    int find_free_block();
 };
 
 #endif
