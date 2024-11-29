@@ -4,6 +4,7 @@
 #include "disk.h"
 
 #include <vector>
+#include <cstring>
 
 class INE5412_FS
 {
@@ -54,7 +55,6 @@ public:
     int  fs_read(int inumber, char *data, int length, int offset);
     int  fs_write(int inumber, const char *data, int length, int offset);
 
-    int fs_show_indirect_data_blocks(int indirect);
     std::vector<int> fs_get_indirect_data_blocks(int indirect);
     std::vector<int> fs_get_direct_data_blocks(int inumber); 
 
@@ -66,6 +66,8 @@ private:
     Disk *disk;
     std::vector<bool> used_inodes_bitmap;
     std::vector<bool> used_blocks_bitmap;
+    void inode_load(int inumber, fs_inode *inode);
+    void inode_save(int inumber, fs_inode *inode);
 
 };
 
