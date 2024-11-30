@@ -262,7 +262,13 @@ int INE5412_FS::fs_read(int inumber, char *data, int length, int offset)
 		cout << "Invalid parameters when reading inode";
 		return -1;
 	}
+	class fs_inode inode;
+	inode_load(inumber, &inode);
 
+	if (inode.isvalid == 0) {
+		cout << "Inode is not valid!";
+		return -1;
+	}
 	int read_bytes = 0;
 	/* 
 	obs: read_bytes é o número de bytes que são adicionados a char *data, não o total de bytes efetivamente acessados no disco. Isso é
@@ -272,9 +278,6 @@ int INE5412_FS::fs_read(int inumber, char *data, int length, int offset)
 	int bytes_offset = 0; // número de bytes a andar para comecar a ler
 	char* buffer = new char[disk->DISK_BLOCK_SIZE]; // buffer para armazenar os bytes lidos do disco
 	int current_length = 0; // tamanho a ser lido no bloco atual
-
-	class fs_inode inode;
-	inode_load(inumber, &inode);
 
 	// obtém todos os blocos de dados do arquivo dado
 	vector<int> direct_blocks = fs_get_direct_data_blocks(inumber);
@@ -338,12 +341,18 @@ int INE5412_FS::fs_write(int inumber, const char *data, int length, int offset)
 		return 0;
 	}
 
+	class fs_inode inode;
+	inode_load(inumber, &inode);
+
+	if (inode.isvalid == 0) {
+		cout << "Inode is not valid!";
+		return 0;
+	}
+
 	int written_bytes = 0;
 	int current_length = 0;
 	char* buffer = new char[disk->DISK_BLOCK_SIZE];
 
-	class fs_inode inode;
-	inode_load(inumber, &inode);
 
 	// obtém todos os blocos de dados do arquivo dado
 	vector<int> direct_blocks = fs_get_direct_data_blocks(inumber);
@@ -360,7 +369,7 @@ int INE5412_FS::fs_write(int inumber, const char *data, int length, int offset)
 	// primeiro, percorre o arquivo através dos blocos de dados já existentes enquanto "gasta" o offset
 
 	for (size_t block_num = block_offset; block_num < blocks.size(); block_num++) {
-
+		cout << "[DEBUG]: entered existing blocks loop\n";
 		// primeira iteracao, talvez haja byte offset
 		if (block_num == block_offset) {
 			
@@ -399,27 +408,71 @@ int INE5412_FS::fs_write(int inumber, const char *data, int length, int offset)
 
 	}
 
+	// se ainda houver bytes a serem escritos, aloca novos blocos de dados
+
+	union fs_block aux_block;
+	int found = 0;
 	int free_block;
 	char* second_buffer = new char[disk->DISK_BLOCK_SIZE];
 
 	// itera preenchendo blocos até terminar de escrever o length ou não haver mais espaco
 	while(length>0) {
-
+		cout << "[DEBUG]: entered new blocks loop\n";
 		free_block = find_free_block();
+
 		if (free_block<0) {
-			cout << "Not enough space to continue writing!";
+			cout << "Not enough space to continue writing; free block not found";
 			return written_bytes;
 		}
 
 		current_length = (length < disk->DISK_BLOCK_SIZE) ? length : disk->DISK_BLOCK_SIZE;
-
+		cout << "[DEBUG] current length: " << current_length << "\n" << "free block: " << free_block << "\n" << "written bytes: " << written_bytes << "\n";
 		memcpy(second_buffer, data+written_bytes, current_length);
-
+		cout << "[DEBUG] second buffer: " << second_buffer << "\n";
 		disk->write(free_block, second_buffer);
 
 		written_bytes += current_length;
 		length -= current_length;
+		
+		// adicionar bloco de dados ao inode
 
+		// se ainda há espaço nos blocos diretos:
+		for (int i=0; i<POINTERS_PER_INODE; i++) {
+			if (inode.direct[i] == 0) {
+				// #TODO: free_block function nao ta correta, pegou 9 que é um bloco indireto de inode como livre
+				cout << "[DEBUG]: direct block found!\n";
+				inode.direct[i] = free_block;
+				found = 1;
+				cout << "[DEBUG]: inode.direct[i]: " << inode.direct[i] << "\n";
+				break;
+			}
+		}
+
+		// se não houver mais espaço nos blocos diretos, adiciona ao bloco indireto
+		if (!found) {
+			cout << "[DEBUG]: indirect block if\n";
+			if (inode.indirect == 0) {
+				inode.indirect = find_free_block();
+				if (inode.indirect < 0) {
+					cout << "Not enough space to continue writing; free block not found";
+					return written_bytes;
+				}
+			}
+			
+			disk->read(inode.indirect, aux_block.data);
+			for (int i=0; i<POINTERS_PER_BLOCK; i++) {
+				if (aux_block.pointers[i] == 0) {
+					aux_block.pointers[i] = free_block;
+					disk->write(inode.indirect, aux_block.data);
+					found = 1;
+					break;
+				}
+			}
+		}
+		if (!found) {
+			cout << "Not enough space to continue writing; free block not found";
+			return written_bytes;
+		}
 	}
 
 	delete[] second_buffer;
