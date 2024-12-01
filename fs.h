@@ -71,6 +71,7 @@ private:
     void inode_load(int inumber, fs_inode *inode);
     void inode_save(int inumber, fs_inode *inode);
     int find_free_block();
+    int create_new_indirect_block();
 };
 
 #endif
