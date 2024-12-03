@@ -6,6 +6,10 @@
 #include <vector>
 #include <cstring>
 
+namespace graphic_interface {
+    class SimpleFSInterface;
+}
+
 class INE5412_FS
 {
 public:
@@ -57,7 +61,7 @@ public:
     int  fs_write(int inumber, const char *data, int length, int offset);
 
     std::vector<int> fs_get_indirect_data_blocks(int indirect);
-    std::vector<int> fs_get_direct_data_blocks(int inumber); 
+    std::vector<int> fs_get_direct_data_blocks(int inumber);
 
 
 private:

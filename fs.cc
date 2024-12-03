@@ -1,8 +1,10 @@
 #include "fs.h"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 
 
 int INE5412_FS::fs_format()
-{
+{	
     if (mounted) {
         cout << "Cannot format a mounted disk!" << endl;
         return 0;
@@ -322,13 +324,18 @@ int INE5412_FS::fs_read(int inumber, char *data, int length, int offset)
 
 		// adiciona os bytes lidos ao buffer (sempre de 4kb em 4kb)
 		disk->read(blocks[block_num], buffer);
-		//cout << "block num: " << blocks[block_num] << "\n" << "buffer: " << buffer << "\n" << "length: " << length << "\n" << "block_num: " << block_num << "\n";
+
 		// se estivermos na primeira iteracão, ainda há byte offset
 		if (block_num == block_offset) {
 
 			// cálculo para o primeiro bloco a ser lido (se length for menor do que falta para o fim do bloco, lê length, senão lê o que falta para o fim do bloco)
 			current_length = (length < (disk->DISK_BLOCK_SIZE-bytes_offset)) ? length : disk->DISK_BLOCK_SIZE-bytes_offset;
-			//cout << "current length: " << current_length << "\n";
+	
+			// adicionado no debugging; caso do arquivo não ser preenchido completamente
+			if (current_length > inode.size-(read_bytes+offset)) {
+				current_length = inode.size-(read_bytes+offset);
+			}
+
 			// faz a cópia dos bytes lidos para o *data
 			memcpy(data, buffer+bytes_offset, current_length);
 
@@ -336,7 +343,12 @@ int INE5412_FS::fs_read(int inumber, char *data, int length, int offset)
 
 			// cálculo para demais casos do length a ser lido (se length for menor que o tamanho do bloco, lê length, senão lê o tamanho do bloco)
 			current_length = (length < disk->DISK_BLOCK_SIZE) ? length : disk->DISK_BLOCK_SIZE;
-			//cout << "current length: " << current_length << "\n";
+
+			// adicionado no debugging; caso do arquivo não ser preenchido completamente
+			if (current_length > inode.size-(read_bytes+offset)) {
+				current_length = inode.size-(read_bytes+offset);
+			}
+
 			// faz a cópia dos bytes lidos para o *data
 			memcpy(data+read_bytes, buffer, current_length);
 
@@ -348,8 +360,8 @@ int INE5412_FS::fs_read(int inumber, char *data, int length, int offset)
 		// decrementa o length para saber quantos bytes ainda faltam ser lidos
 		length -= current_length;
 
-		// se length for 0, todos os bytes foram lidos
-		if (length <= 0) {
+		// se length for 0, todos os bytes requisitados foram lidos
+		if (length <= 0 || read_bytes >= inode.size) {
 			delete[] buffer;
 			return read_bytes;
 		}
@@ -390,6 +402,11 @@ int INE5412_FS::fs_write(int inumber, const char *data, int length, int offset)
 	int block_offset = offset/disk->DISK_BLOCK_SIZE;
 	int bytes_offset = offset%disk->DISK_BLOCK_SIZE;
 
+	cout << "direct blocks: ";
+	for (int i=0; i<direct_blocks.size(); i++) {
+		cout << direct_blocks[i] << " ";
+	}
+	cout << "\nblock offset: " << block_offset << "\nbytes offset:" << bytes_offset << "\n" << "length: " << length << "\n";
 	// primeiro, percorre o arquivo através dos blocos de dados já existentes enquanto "gasta" o offset
 
 	for (size_t block_num = block_offset; block_num < blocks.size(); block_num++) {
@@ -401,24 +418,24 @@ int INE5412_FS::fs_write(int inumber, const char *data, int length, int offset)
 			current_length = (length < (disk->DISK_BLOCK_SIZE-bytes_offset)) ? length : disk->DISK_BLOCK_SIZE-bytes_offset;
 
 			// lê conteúdo atual do disco
-			disk->read(block_num, buffer);
+			disk->read(blocks[block_num], buffer);
 
 			// altera conteúdo atual do disco com conteúdo de data (a partir do offset de bytes)
 			memcpy(buffer+bytes_offset, data, current_length);
-
+			cout << "writing at block " << blocks[block_num] << " with offset " << bytes_offset << " and length " << current_length << "\n";
 			// retorna ao disco
-			disk->write(block_num, buffer);
+			disk->write(blocks[block_num], buffer);
 		}
 
 		else {
 
 			current_length = (length < disk->DISK_BLOCK_SIZE) ? length : disk->DISK_BLOCK_SIZE;
 
-			disk->read(block_num, buffer);
+			disk->read(blocks[block_num], buffer);
 
 			memcpy(buffer, data+written_bytes, current_length);
 
-			disk->write(block_num, buffer);
+			disk->write(blocks[block_num], buffer);
 
 		}
 		

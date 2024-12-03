@@ -1,5 +1,6 @@
 #include "fs.h"
 #include "disk.h"
+#include "graphic_interface.cpp"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +35,16 @@ int main( int argc, char *argv[] )
 
     INE5412_FS fs(&disk);
 
+	graphic_interface::SimpleFSInterface interface(&fs);
+
 	cout << "opened emulated disk image " << argv[1] << " with " << disk.size() << " blocks\n";
+
+	interface.run();
+
+	cout << "closing emulated disk.\n";
+	disk.close();
+
+	return 0;
 
 	while(1) {
 		cout << " simplefs> ";
@@ -171,11 +181,6 @@ int main( int argc, char *argv[] )
 			result = 1;
 		}
 	}
-
-	cout << "closing emulated disk.\n";
-	disk.close();
-
-	return 0;
 }
 
 int File_Ops::do_copyin(const char *filename, int inumber, INE5412_FS *fs)
