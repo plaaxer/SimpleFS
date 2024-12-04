@@ -153,25 +153,45 @@ private:
         if (command == "Exit") {
             window.close();
         } else if (command == "Format") {
-            if (filesystem->fs_format()) {
+            int result = filesystem->fs_format();
+            if (result) {
                 outputText += "Disk formatted successfully.\n";
             } else {
-                outputText += "Format failed!\n";
+                outputText += "Error: cannot format a mounted disk!\n";
             }
         } else if (command == "Mount") {
-            if (filesystem->fs_mount()) {
+            int result = filesystem->fs_mount();
+            if (result == 1) {
                 outputText += "Disk mounted successfully.\n";
+            } else if (result == 0) {
+                outputText += "Error: disk already mounted!\n";
+            } else if (result == -1) {
+                outputText += "Error: the disk's magic number was not found!\n";
             } else {
                 outputText += "Mount failed!\n";
             }
         } else if (command == "Debug") {
             outputText += filesystem->fs_debug();
+            
         } else if (command == "GetSize") {
             setupConsole("Enter the inode number to get size: ", [this](const std::string& input) {
                 try {
-                    int inumber = std::stoi(input);
+                    int inumber;
+                    try {
+                    inumber = std::stoi(input);
+                    } catch (std::out_of_range& e) {
+                        outputText += "Invalid input. Please enter a valid inode number.\n";
+                        consoleOutput.setString(outputText);
+                        return;
+                    }
                     int size = filesystem->fs_getsize(inumber);
-                    outputText += "Size of inode " + std::to_string(inumber) + ": " + std::to_string(size) + "\n";
+                    if (size == -1) {
+                        outputText += "Error: disk not mounted!\n";
+                    } else if (size == -2) {
+                        outputText += "Error: invalid inode number!\n";
+                    } else {
+                        outputText += "Size of inode " + std::to_string(inumber) + ": " + std::to_string(size) + "\n";
+                    }
                 } catch (std::invalid_argument& e) {
                     outputText += "Invalid input. Please enter a valid inode number.\n";
                 }
@@ -181,15 +201,31 @@ private:
             int inumber = filesystem->fs_create();
             if (inumber > 0) {
                 outputText += "Created inode " + std::to_string(inumber) + ".\n";
+            } else if (inumber == 0) {
+                outputText += "Error: disk not mounted!\n";
+            } else if (inumber == -1) {
+                outputText += "Error: no free inodes available!\n";
             } else {
                 outputText += "Create failed!\n";
             }
         } else if (command == "Delete") {
             setupConsole("Enter the inode number to delete: ", [this](const std::string& input) {
             try {
-                int inumber = std::stoi(input);
-                if (filesystem->fs_delete(inumber)) {
+                int inumber;
+                try {
+                    inumber = std::stoi(input);
+                } catch (std::out_of_range& e) {
+                    outputText += "Invalid input. Please enter a valid inode number.\n";
+                    consoleOutput.setString(outputText);
+                    return;
+                    }
+                int result = filesystem->fs_delete(inumber);
+                if (result == 1) {
                     outputText += "Inode " + std::to_string(inumber) + " deleted.\n";
+                } else if (result == 0) {
+                    outputText += "Error: disk not mounted!\n";
+                } else if (result == -1) {
+                    outputText += "Error: invalid inode number!\n";
                 } else {
                     outputText += "Delete failed!\n";
                 }
@@ -205,14 +241,30 @@ private:
                 int inumber;
                 try {
                     inumber = std::stoi(input);
-                } catch (std::invalid_argument& e) {
+                } catch (std::invalid_argument&) {
+                    outputText += "Invalid input. Please enter a valid inode number.\n";
+                    consoleOutput.setString(outputText);
+                    return;
+                } catch (std::out_of_range& e) {
                     outputText += "Invalid input. Please enter a valid inode number.\n";
                     consoleOutput.setString(outputText);
                     return;
                 }
-                if(!do_copyout(inumber, "/dev/stdout", filesystem)) {
-					cout << "cat failed!\n";
+                int result = do_copyout(inumber, "/dev/stdout", filesystem);
+                if (result == 1) {
+                    outputText += "Cat done successfully!\n";               
+                } else if (result == 0) {
+                    outputText += "Error to open stdout\n";
+                } else if (result == -1) {
+                    outputText += "Error: disk not mounted!\n";
+                } else if (result == -2) {
+                    outputText += "Error: inumber not valid!\n";
+                } else if (result == -3) {
+                    outputText += "Error: inode is not valid!\n";
+                } else {
+                    outputText += "CopyIn failed!\n";
                 }
+
             });
         } else if (command == "CopyIn") {
             setupConsole("Enter the inode number and file to read: ", [this](const std::string& input) {
@@ -224,11 +276,20 @@ private:
                     consoleOutput.setString(outputText);
                     return;
                 }
-                if(do_copyin(path.c_str(), inumber, filesystem)) {
-					cout << "copied file " << path.c_str() << " to inode " << inumber << "\n";
-				} else {
-					cout << "copy failed!\n";
-				}
+                int result = do_copyin(path.c_str(), inumber, filesystem);
+                if(result == 1) {
+                    outputText += "Copied file " + path + " to inode " + std::to_string(inumber) + "\n";
+                } else if (result == 0) {
+                    outputText += "Error to open " + path + "\n";
+                } else if (result == -1) {
+                    outputText += "Error: disk not mounted!\n";
+                } else if (result == -2) {
+                    outputText += "Error: inumber not valid!\n";
+                } else if (result == -3) {
+                    outputText += "Error: inode is not valid!\n";
+                } else {
+                    outputText += "CopyIn failed!\n";
+                }
             });
         } else if (command == "CopyOut") {
             cout << "copyout command\n";
@@ -241,8 +302,19 @@ private:
                     consoleOutput.setString(outputText);
                     return;
                 }
-                if (!do_copyout(inumber, path.c_str(), filesystem)) {
-                    outputText += "CopyOut failed!\n";
+                int result = do_copyout(inumber, path.c_str(), filesystem);
+                if (result == 1) {
+                    outputText += "CopyOut done successfully!\n";               
+                } else if (result == 0) {
+                    outputText += "Error to open " + path + "\n";
+                } else if (result == -1) {
+                    outputText += "Error: disk not mounted!\n";
+                } else if (result == -2) {
+                    outputText += "Error: inumber not valid!\n";
+                } else if (result == -3) {
+                    outputText += "Error: inode is not valid!\n";
+                } else {
+                    outputText += "CopyIn failed!\n";
                 }
             });
         } else if (command == "Help/Clear") {
@@ -315,6 +387,10 @@ int do_copyin(const char *filename, int inumber, INE5412_FS *fs)
 
     fclose(file);
 
+    if (result < 0) {
+        return result;
+    }
+
 	return 1;
 }
 
@@ -342,6 +418,10 @@ int do_copyin(const char *filename, int inumber, INE5412_FS *fs)
         cout << offset << " bytes copied\n";
 
         fclose(file);
+        if (result < 0) {
+            return result;
+        }
+
         return 1;
 }
 };

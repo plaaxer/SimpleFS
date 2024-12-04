@@ -80,13 +80,19 @@ std::string INE5412_FS::fs_debug()
 
 int INE5412_FS::fs_mount()
 {
+	
+	if (mounted) {
+		cout << "Disk already mounted!";
+		return 0;
+	}
+	
 	union fs_block superblock;
 	disk->read(0, superblock.data);
 
 	// caso o número mágico não seja encontrado, erro de mounting
 	if (superblock.super.magic != FS_MAGIC) {
 		cout << "\nFailed to mount the disk; magic number not found";
-		return 0;
+		return -1;
 	}
 
 	nblocks = superblock.super.nblocks;
@@ -157,7 +163,8 @@ int INE5412_FS::fs_mount()
 
 int INE5412_FS::fs_create()
 {
-	if (used_inodes_bitmap.size() == 0) {
+
+	if (!mounted) {
 		cout << "Failed to create inode; disk not mounted";
 		return 0;
 	}
@@ -196,14 +203,21 @@ int INE5412_FS::fs_create()
 	}
 
 	cout << "Error: there's not enough space (free inode not found)";
-	return 0;
+	return -1;
 }
 
 int INE5412_FS::fs_delete(int inumber)
 {
+	
+	if (!mounted) {
+		cout << "Failed to delete inode; disk not mounted";
+		return 0;
+	}
+	
+	
 	if (used_inodes_bitmap.size() == 0 || inumber < 1 || static_cast<size_t>(inumber) > used_inodes_bitmap.size()) {
 		cout << "Failed to delete inode";
-		return 0;
+		return -1;
 	}
 
 	// seta o inode como livre no bitmap
@@ -245,8 +259,13 @@ int INE5412_FS::fs_delete(int inumber)
 int INE5412_FS::fs_getsize(int inumber)
 {	
 
-	if (used_inodes_bitmap.size() == 0 || inumber < 1 || static_cast<size_t>(inumber) > used_inodes_bitmap.size()) {
+	if (!mounted) {
+		cout << "Failed to get inode size; disk not mounted";
 		return -1;
+	}
+
+	if (used_inodes_bitmap.size() == 0 || inumber < 1 || static_cast<size_t>(inumber) > used_inodes_bitmap.size()) {
+		return -2;
 	}
 
 	int size;
@@ -262,17 +281,23 @@ int INE5412_FS::fs_getsize(int inumber)
 }
 
 int INE5412_FS::fs_read(int inumber, char *data, int length, int offset)
-{
+{	
+
+	if (!mounted) {
+		cout << "Failed to read inode; disk not mounted";
+		return -1;
+	}
+
 	if (used_inodes_bitmap.size() == 0 || inumber < 1 || static_cast<size_t>(inumber) > used_inodes_bitmap.size() || length <= 0 || offset < 0) {
 		cout << "Invalid parameters when reading inode\n";
-		return -1;
+		return -2;
 	}
 	class fs_inode inode;
 	inode_load(inumber, &inode);
 
 	if (inode.isvalid == 0) {
 		cout << "Inode is not valid!";
-		return -1;
+		return -3;
 	}
 	int read_bytes = 0;
 	/* 
@@ -349,6 +374,12 @@ int INE5412_FS::fs_read(int inumber, char *data, int length, int offset)
 
 int INE5412_FS::fs_write(int inumber, const char *data, int length, int offset)
 {
+
+	if (!mounted) {
+		cout << "Failed to write inode; disk not mounted";
+		return 0;
+	}
+
 	if (used_inodes_bitmap.size() == 0 || inumber < 1 || static_cast<size_t>(inumber) > used_inodes_bitmap.size() || length <= 0 || offset < 0) {
 		cout << "Invalid parameters when reading inode\n";
 		return 0;
