@@ -55,13 +55,13 @@ private:
 
     void setupButtons() {
         std::vector<std::string> commands = {
-            "Format", "Mount", "Debug", "Create", "Delete",
-            "Cat", "CopyIn", "CopyOut", "Help", "Exit"
+            "Format", "Mount", "Debug", "GetSize", "Create", "Delete",
+            "Cat", "CopyIn", "CopyOut", "Help/Clear", "Exit"
         };
 
         for (size_t i = 0; i < commands.size(); ++i) {
 
-            sf::RectangleShape button(sf::Vector2f(150, 50));
+            sf::RectangleShape button(sf::Vector2f(160, 50));
             button.setPosition(50, 50 + i * 60);
             button.setFillColor(sf::Color::Blue);
             buttons.push_back(button);
@@ -149,36 +149,34 @@ private:
 }
 
     void executeCommand(const std::string& command) {
+        outputText += "> Executed: " + command + "\n";
         if (command == "Exit") {
             window.close();
         } else if (command == "Format") {
-            outputText += "> Executed: " + command + "\n";
-            consoleOutput.setString(outputText);
             if (filesystem->fs_format()) {
                 outputText += "Disk formatted successfully.\n";
             } else {
                 outputText += "Format failed!\n";
             }
         } else if (command == "Mount") {
-            outputText += "> Executed: " + command + "\n";
-            consoleOutput.setString(outputText);
             if (filesystem->fs_mount()) {
                 outputText += "Disk mounted successfully.\n";
             } else {
                 outputText += "Mount failed!\n";
             }
         } else if (command == "Debug") {
-            outputText += "> Executed: " + command + "\n";
-            consoleOutput.setString(outputText);
-            filesystem->fs_debug();
-        } else if (command.rfind("GetSize ", 0) == 0) {
-            int inumber = std::stoi(command.substr(8));
-            int result = filesystem->fs_getsize(inumber);
-            if (result >= 0) {
-                outputText += "Inode " + std::to_string(inumber) + " has size " + std::to_string(result) + ".\n";
-            } else {
-                outputText += "GetSize failed!\n";
-            }
+            outputText += filesystem->fs_debug();
+        } else if (command == "GetSize") {
+            setupConsole("Enter the inode number to get size: ", [this](const std::string& input) {
+                try {
+                    int inumber = std::stoi(input);
+                    int size = filesystem->fs_getsize(inumber);
+                    outputText += "Size of inode " + std::to_string(inumber) + ": " + std::to_string(size) + "\n";
+                } catch (std::invalid_argument& e) {
+                    outputText += "Invalid input. Please enter a valid inode number.\n";
+                }
+                consoleOutput.setString(outputText);
+            });
         } else if (command == "Create") {
             int inumber = filesystem->fs_create();
             if (inumber > 0) {
@@ -200,7 +198,55 @@ private:
             }
             consoleOutput.setString(outputText);
         });
-        } else if (command == "Help") {
+
+        } else if (command == "Cat") {
+            cout << "Cat command\n";
+            setupConsole("Enter the inode number to read: ", [this](const std::string& input) {
+                int inumber;
+                try {
+                    inumber = std::stoi(input);
+                } catch (std::invalid_argument& e) {
+                    outputText += "Invalid input. Please enter a valid inode number.\n";
+                    consoleOutput.setString(outputText);
+                    return;
+                }
+                if(!do_copyout(inumber, "/dev/stdout", filesystem)) {
+					cout << "cat failed!\n";
+                }
+            });
+        } else if (command == "CopyIn") {
+            setupConsole("Enter the inode number and file to read: ", [this](const std::string& input) {
+                std::istringstream iss(input);
+                int inumber;
+                std::string path;
+                if (!(iss >> inumber >> path)) {
+                    outputText += "Invalid input. Please enter a valid inode number and file path.\n";
+                    consoleOutput.setString(outputText);
+                    return;
+                }
+                if(do_copyin(path.c_str(), inumber, filesystem)) {
+					cout << "copied file " << path.c_str() << " to inode " << inumber << "\n";
+				} else {
+					cout << "copy failed!\n";
+				}
+            });
+        } else if (command == "CopyOut") {
+            cout << "copyout command\n";
+            setupConsole("Enter the inode number and file to write: ", [this](const std::string& input) {
+                std::istringstream iss(input);
+                int inumber;
+                std::string path;
+                if (!(iss >> inumber >> path)) {
+                    outputText += "Invalid input. Please enter a valid inode number and file path.\n";
+                    consoleOutput.setString(outputText);
+                    return;
+                }
+                if (!do_copyout(inumber, path.c_str(), filesystem)) {
+                    outputText += "CopyOut failed!\n";
+                }
+            });
+        } else if (command == "Help/Clear") {
+            outputText = "Output Console:\n"; // resetando só
             outputText += "Commands are:\n";
             outputText += "    Format\n";
             outputText += "    Mount\n";
@@ -235,6 +281,69 @@ private:
         window.draw(consoleOutput);
         window.display();
     }
+
+int do_copyin(const char *filename, int inumber, INE5412_FS *fs)
+{
+	FILE *file;
+	int offset=0, result, actual;
+	char buffer[16384];
+
+	file = fopen(filename, "r");
+	if(!file) {
+		cout << "couldn't open " << filename << "\n";
+		return 0;
+	}
+
+	while(1) {
+		result = fread(buffer,1,sizeof(buffer),file);
+		if(result <= 0) break;
+		if(result > 0) {
+			actual = fs->fs_write(inumber,buffer,result,offset);
+			if(actual<0) {
+				cout << "ERROR: fs_write return invalid result " << actual << "\n";
+				break;
+			}
+			offset += actual;
+			if(actual!=result) {
+				cout << "WARNING: fs_write only wrote " << actual << " bytes, not " << result << " bytes\n";
+				break;
+			}
+		}
+	}
+
+	cout << offset << " bytes copied\n";
+
+    fclose(file);
+
+	return 1;
+}
+
+
+
+    int do_copyout(int inumber, const char *filename, INE5412_FS *fs)
+{
+        FILE *file;
+        int offset = 0, result;
+        char buffer[16384];
+
+        file = fopen(filename,"w");
+        if(!file) {
+            cout << "couldn't open " << filename << "\n";
+            return 0;
+        }
+
+        while(1) {
+            result = fs->fs_read(inumber,buffer,sizeof(buffer),offset);
+            if(result<=0) break;
+            fwrite(buffer,1,result,file);
+            offset += result;
+        }
+
+        cout << offset << " bytes copied\n";
+
+        fclose(file);
+        return 1;
+}
 };
     
 } // namespace graphic_interface

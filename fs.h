@@ -49,7 +49,7 @@ public:
         mounted = 0;
     } 
 
-    void fs_debug();
+    std::string fs_debug();
     int  fs_format();
     int  fs_mount();
 
