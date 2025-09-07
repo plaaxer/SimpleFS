@@ -1,30 +1,35 @@
-GXX=g++
+GXX = g++
 
-WARNINGS=-Wall -Wno-sign-compare
+WARNINGS = -Wall -Wno-sign-compare
 
-# SFML Libraries
-SFML_LIBS=-lsfml-graphics -lsfml-window -lsfml-system
+SRC_DIR = src
+OBJ_DIR = obj
+BIN_DIR = bin
 
-# Final Target
-simplefs: shell.o fs.o disk.o graphic_interface.o
-	$(GXX) shell.o fs.o disk.o graphic_interface.o -o simplefs $(SFML_LIBS)
+SFML_LIBS = -lsfml-graphics -lsfml-window -lsfml-system
 
-# Compile Shell with Graphical Interface Integration
-shell.o: shell.cc
-	$(GXX) -Wall shell.cc -c -o shell.o -g
+SRCS = $(SRC_DIR)/shell.cc $(SRC_DIR)/fs.cc $(SRC_DIR)/disk.cc $(SRC_DIR)/graphic_interface.cpp
+OBJS = $(OBJ_DIR)/shell.o $(OBJ_DIR)/fs.o $(OBJ_DIR)/disk.o $(OBJ_DIR)/graphic_interface.o
 
-# Compile File System Logic
-fs.o: fs.cc fs.h
-	$(GXX) -Wall fs.cc -c -o fs.o -g
+$(BIN_DIR)/simplefs: $(OBJS)
+	@mkdir -p $(BIN_DIR)
+	$(GXX) $(OBJS) -o $(BIN_DIR)/simplefs $(SFML_LIBS)
 
-# Compile Disk Logic
-disk.o: disk.cc disk.h
-	$(GXX) -Wall disk.cc -c -o disk.o -g
+$(OBJ_DIR)/shell.o: $(SRC_DIR)/shell.cc
+	@mkdir -p $(OBJ_DIR)
+	$(GXX) $(WARNINGS) -c $< -o $@ -g
 
-# Compile Graphical Interface
-graphic_interface.o: graphic_interface.cpp
-	$(GXX) -Wall graphic_interface.cpp -c -o graphic_interface.o -g $(SFML_LIBS)
+$(OBJ_DIR)/fs.o: $(SRC_DIR)/fs.cc $(SRC_DIR)/fs.h
+	@mkdir -p $(OBJ_DIR)
+	$(GXX) $(WARNINGS) -c $< -o $@ -g
 
-# Clean Up
+$(OBJ_DIR)/disk.o: $(SRC_DIR)/disk.cc $(SRC_DIR)/disk.h
+	@mkdir -p $(OBJ_DIR)
+	$(GXX) $(WARNINGS) -c $< -o $@ -g
+
+$(OBJ_DIR)/graphic_interface.o: $(SRC_DIR)/graphic_interface.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(GXX) $(WARNINGS) -c $< -o $@ -g $(SFML_LIBS)
+
 clean:
-	rm -f simplefs shell.o fs.o disk.o graphic_interface.o
+	rm -rf $(OBJ_DIR) $(BIN_DIR)
